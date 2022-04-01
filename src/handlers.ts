@@ -1,74 +1,78 @@
 import { FastifyRequest, FastifyReply } from "fastify";
-import { PokemonWithStats } from "models/PokemonWithStats";
+const https = require('https');
 
 export async function getPokemonByName(request: FastifyRequest, reply: FastifyReply) {
-  var name: string = request.params['name']
+	const name: string = request.params['name']?.trim();
+	
+	reply.headers['Accept'] = 'application/json';
+	
+	if (!name) {
+		reply.code(404);
+		reply.send("Pokemon name is invalid.");
 
-  reply.headers['Accept'] = 'application/json'
+		return reply;
+	}
 
-  var urlApiPokeman = `https://pokeapi.co/api/v2/pokemon/`;
+	const urlApiPokeman = `https://pokeapi.co/api/v2/pokemon/${name}`;
+	
+	try {
+		const response: any = await httpGet(urlApiPokeman);
 
-  var params = {}
-
-  name == null
-      ? name.trim() != ''
-      ? (params["name"] = name, urlApiPokeman = urlApiPokeman + '/', urlApiPokeman = urlApiPokeman + name)
-      : (urlApiPokeman = urlApiPokeman + '"?offset=20"', urlApiPokeman = urlApiPokeman + "&limit=20")
-      : (urlApiPokeman = urlApiPokeman + '"?offset=20"', urlApiPokeman = urlApiPokeman + "&limit=20")
-
-  const http = require('http');
-  const keepAliveAgent = new http.Agent({ keepAlive: true });
-
-  let response: any = ""
-
-  http.request({ ...reply.headers, ...({ hostname: urlApiPokeman, port: 80, }) }, (result) => { response = result })
-
-  if (response == null) {
-    reply.code(404)
-  }
-
-  computeResponse(response, reply)
-
-  reply.send(response)
-
-  return reply
+		await computeResponse(response);
+	
+		reply.send(response);
+	} catch (e) {
+		reply.code(404);
+		reply.send("Pokemon doesn't exist.");
+	}
+	
+	return reply;
 }
 
-export const computeResponse = async (response: unknown, reply: FastifyReply) => {
-  const resp = response as any
+export const computeResponse = async ({ types, stats }) => {	
+	const pokemonTypes = [];
 
-  let types = resp.types.map(type => type.type).map(type => { return type.url }).reduce((types, typeUrl) => types.push(typeUrl));
+	for (let pokemonType of types.map(_ => _.type)) {
+		const statResponse = await httpGet(pokemonType.url);
+		pokemonTypes.push(statResponse);
+	}
 
-  let pokemonTypes = []
+	// The goal you are trying to achieve here isn't clear.
+	
+	/* stats.forEach(element => {
+		var stats = []
+	
+		pokemonTypes.map(pok =>
+			pok.stats.map(st =>
+				st.stat.name.toUpperCase() == element.stat.name
+					? stats.push(st.base_state)
+					: ([])
+			)
+		)
+	
+		if (stats) {
+		  let avg = stats.reduce((a, b) => a + b) / stats.length
+		  element.averageStat = avg
+		} else {
+		  element.averageStat = 0
+		}
+	}); */
+}
 
-  types.forEach(element => {
-    const http = require('http');
-    const keepAliveAgent = new http.Agent({ keepAlive: true });
-
-    http.request({ hostname: element }, (response) => pokemonTypes.push(response))
-
-  });
-
-  if (pokemonTypes == undefined)
-    throw pokemonTypes
-
-  response.stats.forEach(element => {
-    var stats = []
-
-    pokemonTypes.map(pok =>
-        pok.stats.map(st =>
-            st.stat.name.toUpperCase() == element.stat.name
-                ? stats.push(st.base_state)
-                : ([])
-        )
-    )
-
-    if (stats) {
-      let avg = stats.reduce((a, b) => a + b) / stats.length
-      element.averageStat = avg
-    } else {
-      element.averageStat = 0
-    }
-  });
-
+const httpGet = url => {
+	return new Promise((resolve, reject) => {
+		const req = https.get(url, res => {
+			if (res.statusCode < 200 || res.statusCode >= 300) return reject();
+			
+			res.setEncoding('utf8');
+			
+			let body = ''; 
+			
+			res.on('data', chunk => body += chunk);
+			
+			res.on('end', () =>
+				resolve(JSON.parse(body))
+			);
+		}).on('error', reject);
+	});
 }
